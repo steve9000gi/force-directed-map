@@ -2,25 +2,7 @@
 // characteristics in boingified mode, that is, as a force-directed graph which
 // uses intermediate nodes to to create Bezier-curved links.
 //
-var body = d3.select("body");
 
-var w = 1280,
-    h = 750,
-    r = 20;
-
-var inputFilename = "Philip17X.json";
-body.append("h3").text("input: " + inputFilename);
-
-var svg = body.append("svg:svg")
-    .attr("width", w)
-    .attr("height", h)
-    // hack: doubling xmlns: so it doesn't disappear once in the DOM
-    .attr({"xmlns": "http://www.w3.org/2000/svg",
-          "xmlns:xmlns:xlink": "http://www.w3.org/1999/xlink", 
-          version: "1.1"
-         });
-
-d3.json(inputFilename, drawGraph);
 
 // http://stackoverflow.com/questions/21631127/find-the-array-index-of-an-object-with-a-specific-key-value-in-underscore
 Array.prototype.getIndexBy = function (name, value) {
@@ -32,7 +14,41 @@ Array.prototype.getIndexBy = function (name, value) {
 };
 
 
+var setupUpload = function() {
+  var thisGraph = this;
+  d3.select("#upload-input")
+    .on("click", function() {
+      console.log("upload-input on click");
+      document.getElementById("hidden-file-upload").click();
+    });
+
+  d3.select("#hidden-file-upload").on("change", function() {
+    if (window.File && window.FileReader && window.FileList && window.Blob) {
+      var uploadFile = this.files[0];
+      var filereader = new window.FileReader();
+      var txtRes;
+
+      filereader.onload = function(e) {
+        try {
+          txtRes = filereader.result;
+	  //d3.select("h3").html(e.target.fileName);
+        } catch(err) {
+          window.alert("Error reading file: " + err.message);
+        }
+        return drawGraph(null, JSON.parse(txtRes));
+      };
+      filereader.readAsText(uploadFile);
+    } else {
+      alert("Your browser won't let you read this file -- try upgrading your browser to IE 10+ "
+          + "or Chrome or Firefox.");
+    }
+  });
+};
+
+
 function drawGraph(error, graph) {
+  d3.selectAll("svg *").remove();
+
   var vertices = graph.nodes.slice();
   var links = [];
   var bilinks = [];
@@ -73,7 +89,6 @@ function drawGraph(error, graph) {
            return "M" + d[0].x + "," + d[0].y // moveto absolute
                 + "S" + d[1].x + "," + d[1].y // cubic Bezier curveto absolute
                 + " " + targetX + "," + targetY;
-                //+ " " + d[2].x + "," + d[2].y;
          });
          gnodes.attr("transform", transform);
        })
@@ -220,16 +235,35 @@ function drawGraph(error, graph) {
 /**/
 }
 
-function getColorFromGroup(d) { 
-var range = [ "#8800ff", "#ee4550", "#00ccff", "#c14098", "#f4674b", "#12c2a8",
-              "#304ece", "#5600ee" ];
-  return range[d.group];
-}
 
 function transform(d) {
   return "translate(" + d.x + "," + d.y + ")";
 }
 
+
 function circleRadius(d) {
   return 14;
 }
+
+
+// MAIN:
+var body = d3.select("body");
+
+var w = 1280,
+    h = 750,
+    r = 20;
+
+var inputFilename = "Philip17X.json";
+body.append("h3").text("input: " + inputFilename);
+
+var svg = body.append("svg:svg")
+    .attr("width", w)
+    .attr("height", h)
+    // hack: doubling xmlns: so it doesn't disappear once in the DOM
+    .attr({"xmlns": "http://www.w3.org/2000/svg",
+          "xmlns:xmlns:xlink": "http://www.w3.org/1999/xlink", 
+          version: "1.1"
+         });
+setupUpload();
+d3.json(inputFilename, drawGraph);
+

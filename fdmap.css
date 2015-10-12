@@ -33,3 +33,21 @@ d3-tip {
   line-height: 1;
   color: black;
 }
+
+#hidden-file-upload {
+  display: none;
+}
+
+#upload-input {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 29px;
+  border: 3px red;
+  opacity: 0.4;
+}
+
+.iconInput:hover {
+  opacity: 1.0;
+}
+		 
