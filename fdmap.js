@@ -18,26 +18,27 @@ var setupUpload = function() {
   var thisGraph = this;
   d3.select("#upload-input")
     .on("click", function() {
-      console.log("upload-input on click");
       document.getElementById("hidden-file-upload").click();
     });
 
   d3.select("#hidden-file-upload").on("change", function() {
     if (window.File && window.FileReader && window.FileList && window.Blob) {
       var uploadFile = this.files[0];
-      var filereader = new window.FileReader();
+      var fileReader = new window.FileReader();
+      fileReader.filename = uploadFile.name;
       var txtRes;
 
-      filereader.onload = function(e) {
+      fileReader.onload = function(e) {
         try {
-          txtRes = filereader.result;
-	  //d3.select("h3").html(e.target.fileName);
+          txtRes = fileReader.result;
+	  var filename = this.filename;
+	  d3.select("h3").html(filename);
         } catch(err) {
           window.alert("Error reading file: " + err.message);
         }
         return drawGraph(null, JSON.parse(txtRes));
       };
-      filereader.readAsText(uploadFile);
+      fileReader.readAsText(uploadFile);
     } else {
       alert("Your browser won't let you read this file -- try upgrading your browser to IE 10+ "
           + "or Chrome or Firefox.");
@@ -46,51 +47,81 @@ var setupUpload = function() {
 };
 
 
-function drawGraph(error, graph) {
-  d3.selectAll("svg *").remove();
+// http://javascript.crockford.com/memory/leak.html
+function purge(d) {
+  var a = d.attributes, i, l, n;
+  if (a) {
+    for (i = a.length - 1; i >= 0; i -= 1) {
+      n = a[i].name;
+      if (typeof d[n] === 'function') {
+        d[n] = null;
+      }
+    }
+  }
+  a = d.childNodes;
+  if (a) {
+    l = a.length;
+    for (i = 0; i < l; i += 1) {
+      purge(d.childNodes[i]);
+    }
+  }
+};
 
-  var vertices = graph.nodes.slice();
+
+function drawGraph(error, graph) {
+  var oldNodes = d3.selectAll("svg *")[0];
+  oldNodes.forEach(function(node) {
+    purge(node);
+  });
+  d3.selectAll("svg *").remove();
+  d3.selectAll(".d3-tip").remove();
+
+  var nodes = graph.nodes.slice();
   var links = [];
   var bilinks = [];
 
   // Set up control points for Bezier curves:
   graph.links.forEach(function(link) {
-    var si = vertices.getIndexBy("id", link.source);
-    var s = vertices[si];
-    var ti = vertices.getIndexBy("id", link.target);
-    var t = vertices[ti];
+    var si = nodes.getIndexBy("id", link.source);
+    var s = nodes[si];
+    var ti = nodes.getIndexBy("id", link.target);
+    var t = nodes[ti];
     var i = {}; // intermediate node
     var style = link.style;
-    vertices.push(i);
+    nodes.push(i);
     links.push({source: s, target: i}, {source: i, target: t});
     bilinks.push([s, i, t, style, link.color]);
   });
 
   // Set up force:
   var force = d3.layout.force()
-      .nodes(vertices)
+      .nodes(nodes)
       .links(links)
       .size([w, h])
       .linkDistance(40)
       .linkStrength(2)
-      .friction(0.92)
+      .friction(0.9)
       .gravity(0.15)
-      .charge(-100)
+      .charge(-170)
       .on("tick", function() {
-         paths.attr("d", function(d) { // Path to node border, not center
-           var r = circleRadius(d[2]),
-           deltaX = d[2].x - d[0].x,
-           deltaY = d[2].y - d[0].y,
-           dist = Math.sqrt(deltaX * deltaX + deltaY * deltaY),
-           normX = deltaX /dist,
-           normY = deltaY / dist,
-           targetX = d[2].x - (normX * (circleRadius(d[2]) - 4)),
-           targetY = d[2].y - (normY * (circleRadius(d[2]) - 4));
-           return "M" + d[0].x + "," + d[0].y // moveto absolute
-                + "S" + d[1].x + "," + d[1].y // cubic Bezier curveto absolute
-                + " " + targetX + "," + targetY;
-         });
-         gnodes.attr("transform", transform);
+	var q = d3.geom.quadtree(nodes),
+	    i = 0,
+	    n = nodes.length;
+	while (++i < n) q.visit(collide(nodes[i]));
+
+        paths.attr("d", function(d) { // Path to node border, not center
+          deltaX = d[2].x - d[0].x,
+          deltaY = d[2].y - d[0].y,
+          dist = Math.sqrt(deltaX * deltaX + deltaY * deltaY),
+          normX = deltaX /dist,
+          normY = deltaY / dist,
+          targetX = d[2].x - (normX * (r - 4)),
+          targetY = d[2].y - (normY * (r - 4));
+          return "M" + d[0].x + "," + d[0].y // moveto absolute
+               + "S" + d[1].x + "," + d[1].y // cubic Bezier curveto absolute
+               + " " + targetX + "," + targetY;
+        });
+        gnodes.attr("transform", transform);
        })
       .start();
 
@@ -147,7 +178,6 @@ function drawGraph(error, graph) {
       .classed("gnode", true)
       .attr("id", function(d) { return "node" + d.id; })
       .call(force.drag);
-    gnodes.each(collide(0.5));
   
   // Add one circle to each group of class gnode:
   gnodes.append("svg:a")
@@ -157,7 +187,7 @@ function drawGraph(error, graph) {
            .attr("px", function(d) { return d.x; })
            .attr("py", function(d) { return d.y; })
         .append("circle")
-          .attr("r", circleRadius)
+          .attr("r", r)
           .style("fill", "#ffffff")
           .style("stroke", function(d) {
             return d.color; 
@@ -165,12 +195,8 @@ function drawGraph(error, graph) {
           .style("stroke-width", "1px")
           .classed("node", true)
         .on("rightclick", function(d) { 
-                            console.log("on rightclick."); 
-                            d3.event.stopPropagation();
-                          })
-	.on("contextmenu", function(data, index) {
-	     console.log("on contextmenu.");
-	});
+            d3.event.stopPropagation();
+          });
 
   //Set up tooltips:
   var tip = d3.tip()
@@ -203,36 +229,31 @@ function drawGraph(error, graph) {
 	return function(t) { return d.radius = i(t); };
       });
 
-/**/
-  // Collision detection:
-  var padding = 68, // separation between circles
-      radius=80;
-  function collide(alpha) {
-    var quadtree = d3.geom.quadtree(gnodes);
-    return function(d) {
-      var rb = 2*radius + padding,
-	  nx1 = d.x - rb,
-	  nx2 = d.x + rb,
-	  ny1 = d.y - rb,
-	  ny2 = d.y + rb;
-      quadtree.visit(function(quad, x1, y1, x2, y2) {
-	if (quad.point && (quad.point !== d)) {
-	  var x = d.x - quad.point.x,
-	      y = d.y - quad.point.y,
-	      l = Math.sqrt(x * x + y * y);
-	    if (l < rb) {
-	    l = (l - rb) / l * alpha;
-	    d.x -= x *= l;
-	    d.y -= y *= l;
-	    quad.point.x += x;
-	    quad.point.y += y;
-	  }
+  
+  function collide(node) {
+    //var r = node.radius + 16,
+    var r = 35,
+	nx1 = node.x - r,
+	nx2 = node.x + r,
+	ny1 = node.y - r,
+	ny2 = node.y + r;
+    return function(quad, x1, y1, x2, y2) {
+      if (quad.point && (quad.point !== node)) {
+	var x = node.x - quad.point.x,
+	    y = node.y - quad.point.y,
+	    l = Math.sqrt(x * x + y * y),
+	    r = node.radius + quad.point.radius;
+	if (l < r) {
+	  l = (l - r) / l * 0.5;
+	  node.x -= x *= l;
+	  node.y -= y *= l;
+	  quad.point.x += x;
+	  quad.point.y += y;
 	}
-	return x1 > nx2 || x2 < nx1 || y1 > ny2 || y2 < ny1;
-      });
+      }
+      return x1 > nx2 || x2 < nx1 || y1 > ny2 || y2 < ny1;
     };
-  }
-/**/
+  };
 }
 
 
@@ -241,20 +262,15 @@ function transform(d) {
 }
 
 
-function circleRadius(d) {
-  return 14;
-}
-
-
 // MAIN:
 var body = d3.select("body");
-
-var w = 1280,
-    h = 750,
-    r = 20;
+var docEl = document.documentElement;
+var w = window.innerWidth || docEl.clientWidth;
+    h = window.innerHeight|| docEl.clientHeight;
+var r = 14;
 
 var inputFilename = "Philip17X.json";
-body.append("h3").text("input: " + inputFilename);
+body.append("h3").text(inputFilename);
 
 var svg = body.append("svg:svg")
     .attr("width", w)
