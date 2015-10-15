@@ -3,6 +3,7 @@
 // uses intermediate nodes to to create Bezier-curved links.
 //
 
+"use strict";
 
 // http://stackoverflow.com/questions/21631127/find-the-array-index-of-an-object-with-a-specific-key-value-in-underscore
 Array.prototype.getIndexBy = function (name, value) {
@@ -32,7 +33,7 @@ var setupUpload = function() {
         try {
           txtRes = fileReader.result;
 	  var filename = this.filename;
-	  d3.select("h3").html(filename);
+	  d3.select("#inputFilename").html(filename);
         } catch(err) {
           window.alert("Error reading file: " + err.message);
         }
@@ -47,32 +48,7 @@ var setupUpload = function() {
 };
 
 
-// http://javascript.crockford.com/memory/leak.html
-function purge(d) {
-  var a = d.attributes, i, l, n;
-  if (a) {
-    for (i = a.length - 1; i >= 0; i -= 1) {
-      n = a[i].name;
-      if (typeof d[n] === 'function') {
-        d[n] = null;
-      }
-    }
-  }
-  a = d.childNodes;
-  if (a) {
-    l = a.length;
-    for (i = 0; i < l; i += 1) {
-      purge(d.childNodes[i]);
-    }
-  }
-};
-
-
 function drawGraph(error, graph) {
-  var oldNodes = d3.selectAll("svg *")[0];
-  oldNodes.forEach(function(node) {
-    purge(node);
-  });
   d3.selectAll("svg *").remove();
   d3.selectAll(".d3-tip").remove();
 
@@ -92,68 +68,6 @@ function drawGraph(error, graph) {
     links.push({source: s, target: i}, {source: i, target: t});
     bilinks.push([s, i, t, style, link.color]);
   });
-
-  // Set up force:
-  var force = d3.layout.force()
-      .nodes(nodes)
-      .links(links)
-      .size([w, h])
-      .linkDistance(40)
-      .linkStrength(2)
-      .friction(0.9)
-      .gravity(0.15)
-      .charge(-170)
-      .on("tick", function() {
-	var q = d3.geom.quadtree(nodes),
-	    i = 0,
-	    n = nodes.length;
-	while (++i < n) q.visit(collide(nodes[i]));
-
-        paths.attr("d", function(d) { // Path to node border, not center
-          deltaX = d[2].x - d[0].x,
-          deltaY = d[2].y - d[0].y,
-          dist = Math.sqrt(deltaX * deltaX + deltaY * deltaY),
-          normX = deltaX /dist,
-          normY = deltaY / dist,
-          targetX = d[2].x - (normX * (r - 4)),
-          targetY = d[2].y - (normY * (r - 4));
-          return "M" + d[0].x + "," + d[0].y // moveto absolute
-               + "S" + d[1].x + "," + d[1].y // cubic Bezier curveto absolute
-               + " " + targetX + "," + targetY;
-        });
-        gnodes.attr("transform", transform);
-       })
-      .start();
-
-  // Create arrow heads:
-  linkColors = [];
-  
-  graph.links.forEach(function(link) {
-    if (linkColors.indexOf(link.color) === -1) {
-      linkColors.push(link.color);
-    }
-  });
- 
-  svg.append("defs").selectAll("marker")
-     .data(linkColors)
-     .enter().append("marker")
-       .attr("id", function(d) {
-          return "a" + d;
-       })
-       .attr("fill", function(color) {
-         return color;
-       })
-       .attr("stroke", function(color) { return color; })
-       .attr("viewBox", "0 -5 10 10")
-       .attr("refX", 15)
-       .attr("refY", -1.5)
-       .attr("markerWidth", 6)
-       //.attr("markerWidth", function(d) { return (d.visible == true? 6 : 0); })
-       //.attr("markerHeight", function(d) { return (d.visible == true? 6 : 0); })
-       .attr("markerHeight", 6)
-       .attr("orient", "auto")
-     .append("path")
-     .attr("d", "M0,-5L10,0L0,5");
 
   // Paths:
   var paths = svg.append("g").selectAll("path")
@@ -176,8 +90,8 @@ function drawGraph(error, graph) {
     .enter()
       .append("g")
       .classed("gnode", true)
-      .attr("id", function(d) { return "node" + d.id; })
-      .call(force.drag);
+      .attr("id", function(d) { return "node" + d.id; });
+      //.call(force.drag);
   
   // Add one circle to each group of class gnode:
   gnodes.append("svg:a")
@@ -229,6 +143,70 @@ function drawGraph(error, graph) {
 	return function(t) { return d.radius = i(t); };
       });
 
+  // Set up force:
+  var force = d3.layout.force()
+      .nodes(nodes)
+      .links(links)
+      .size([w, h])
+      .linkDistance(40)
+      .linkStrength(2)
+      .friction(0.9)
+      .gravity(0.15)
+      .charge(-170)
+      .on("tick", function() {
+	var q = d3.geom.quadtree(nodes),
+	    i = 0,
+	    n = nodes.length;
+	while (++i < n) q.visit(collide(nodes[i]));
+
+        paths.attr("d", function(d) { // Path to node border, not center
+          var deltaX = d[2].x - d[0].x,
+          deltaY = d[2].y - d[0].y,
+          dist = Math.sqrt(deltaX * deltaX + deltaY * deltaY),
+          normX = deltaX / dist,
+          normY = deltaY / dist,
+          targetX = d[2].x - (normX * (r - 4)),
+          targetY = d[2].y - (normY * (r - 4));
+          return "M" + d[0].x + "," + d[0].y // moveto absolute
+               + "S" + d[1].x + "," + d[1].y // cubic Bezier curveto absolute
+               + " " + targetX + "," + targetY;
+        });
+        gnodes.attr("transform", transform);
+       })
+      .start();
+
+      d3.selectAll(".gnode").call(force.drag);
+
+  // Create arrow heads:
+  var linkColors = [];
+  
+  graph.links.forEach(function(link) {
+    if (linkColors.indexOf(link.color) === -1) {
+      linkColors.push(link.color);
+    }
+  });
+ 
+  svg.append("defs").selectAll("marker")
+     .data(linkColors)
+     .enter().append("marker")
+       .attr("id", function(d) {
+          return "a" + d;
+       })
+       .attr("fill", function(color) {
+         return color;
+       })
+       .attr("stroke", function(color) { return color; })
+       .attr("viewBox", "0 -5 10 10")
+       .attr("refX", 15)
+       .attr("refY", -1.5)
+       .attr("markerWidth", 6)
+       //.attr("markerWidth", function(d) { return (d.visible == true? 6 : 0); })
+       //.attr("markerHeight", function(d) { return (d.visible == true? 6 : 0); })
+       .attr("markerHeight", 6)
+       .attr("orient", "auto")
+     .append("path")
+     .attr("d", "M0,-5L10,0L0,5");
+
   
   function collide(node) {
     //var r = node.radius + 16,
@@ -266,11 +244,15 @@ function transform(d) {
 var body = d3.select("body");
 var docEl = document.documentElement;
 var w = window.innerWidth || docEl.clientWidth;
-    h = window.innerHeight|| docEl.clientHeight;
+var h = window.innerHeight|| docEl.clientHeight;
 var r = 14;
 
 var inputFilename = "Philip17X.json";
-body.append("h3").text(inputFilename);
+body.append("div")
+  .attr("id", "ifnDiv")
+  .append("span")
+  .attr("id", "inputFilename")
+  .text(inputFilename);
 
 var svg = body.append("svg:svg")
     .attr("width", w)
@@ -280,6 +262,7 @@ var svg = body.append("svg:svg")
           "xmlns:xmlns:xlink": "http://www.w3.org/1999/xlink", 
           version: "1.1"
          });
+
 setupUpload();
 d3.json(inputFilename, drawGraph);
 
